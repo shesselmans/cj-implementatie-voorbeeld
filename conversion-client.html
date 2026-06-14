@@ -1,0 +1,156 @@
+<!-- ============================================================
+     DUMMY dataLayer – alleen voor lokaal testen, verwijder dit
+     blok voordat je live gaat. Op de echte bevestigingspagina
+     vult het CMS / tag-systeem de dataLayer zelf.
+     ============================================================ -->
+<script>
+	window.dataLayer = window.dataLayer || [];
+	window.dataLayer.push({
+		event: "purchase",
+		ecommerce: {
+			transaction_id: "ORD-20260614-001",
+			value: 379.90,
+			currency: "EUR",
+			coupon: "ZOMER10",
+			discount: 20.00,
+			items: [
+				{
+					item_id:   "RB3025-001/58",
+					item_name: "Ray-Ban Aviator Classic",
+					price:     199.95,
+					quantity:  1,
+					discount:  10.00
+				},
+				{
+					item_id:   "RB2140-901",
+					item_name: "Ray-Ban Wayfarer Original",
+					price:     179.95,
+					quantity:  1,
+					discount:  10.00
+				}
+			]
+		}
+	});
+
+	// Dummy cje-cookie zodat de guard in het script hieronder niet blokkeert
+	document.cookie = "cje=7166ddf3b35b11eb834200a10a1eb972; path=/";
+</script>
+<!-- ============================================================ -->
+
+<script>
+	(function(){
+
+		// ----------------------------------------------------------------
+		// Read the cjEvent click ID from the existing "cje" first-party
+		// cookie (cookie is set elsewhere, we only read it here).
+		// ----------------------------------------------------------------
+		function getCookie(name) {
+			var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+			return m ? decodeURIComponent(m.pop()) : "";
+		}
+		var cjEvent = getCookie("cje");
+
+		// ----------------------------------------------------------------
+		// Find the most recent GA4 "purchase" event in the dataLayer.
+		// The dataLayer is a plain array; we scan it in reverse so we
+		// always use the latest push in case the page fired more than one.
+		// ----------------------------------------------------------------
+		var dl = window.dataLayer || [];
+		var ecom = null;
+		for (var i = dl.length - 1; i >= 0; i--) {
+			if (dl[i] && dl[i].event === "purchase" && dl[i].ecommerce) {
+				ecom = dl[i].ecommerce;
+				break;
+			}
+		}
+
+		if (!ecom) {
+			console.log("CJ conversion not sent: no GA4 purchase event found in dataLayer.");
+			return;
+		}
+
+		var orderId = ecom.transaction_id || "";
+		if (!orderId || !cjEvent) {
+			console.log("CJ conversion not sent: orderId or cjEvent missing.", { orderId: orderId, cjEvent: cjEvent });
+			return;
+		}
+
+		// ----------------------------------------------------------------
+		// Map GA4 ecommerce items → CJ items.
+		//
+		// GA4 field          CJ field
+		// -----------------  ----------
+		// item_id            sku
+		// price              unitPrice  (price is per-unit, after item discount)
+		// quantity           quantity
+		// discount           discount   (GA4 discount is per unit; CJ wants the
+		//                               total line discount, so multiply by qty)
+		// ----------------------------------------------------------------
+		var items = [];
+		var ga4Items = ecom.items || [];
+		for (var j = 0; j < ga4Items.length; j++) {
+			var g = ga4Items[j];
+			var qty      = parseInt(g.quantity, 10)   || 1;
+			var discount = parseFloat(g.discount)     || 0;
+			items.push({
+				sku:       String(g.item_id || g.id || ""),
+				unitPrice: parseFloat(g.price) || 0,
+				quantity:  qty,
+				discount:  Math.round(discount * qty * 100) / 100   // total line discount
+			});
+		}
+
+		// ----------------------------------------------------------------
+		// Build the payload.
+		// eventTime: GA4 does not push a timestamp; we use the current
+		// wall-clock time in ISO 8601 UTC format as required by CJ.
+		// ----------------------------------------------------------------
+		var demo = true;   // zet op false voor productie
+
+		var data = {
+			affiliateName: "CJ",
+			demo:          demo,
+			orderId:       String(orderId),
+			eventTime:     new Date().toISOString(),
+			amount:        parseFloat(ecom.value)    || 0,
+			currency:      String(ecom.currency      || "EUR"),
+			cjEvent:       cjEvent,
+			items:         items
+		};
+
+		// Order-level coupon (prefer ecommerce.coupon; GA4 also allows per-item coupons)
+		var orderCoupon = ecom.coupon || "";
+		if (orderCoupon) {
+			data.coupon = String(orderCoupon);
+		}
+
+		// Order-level discount (optional; some implementations push ecommerce.discount)
+		var orderDiscount = parseFloat(ecom.discount) || 0;
+		if (orderDiscount) {
+			data.discount = orderDiscount;
+		}
+
+		// ----------------------------------------------------------------
+		// POST to the pearle.nl server; the server will forward to CJ
+		// ----------------------------------------------------------------
+		var xmlhttp = new XMLHttpRequest();
+		xmlhttp.onload = function() {
+			if (xmlhttp.status >= 200 && xmlhttp.status < 300) {
+				var response = JSON.parse(xmlhttp.responseText);
+				if (demo) {
+					console.log("[CJ demo] Conversie succesvol verstuurd.");
+					console.log("[CJ demo] Server response:", response);
+				}
+			} else {
+				console.error("[CJ] Fout bij versturen conversie.", xmlhttp.status, xmlhttp.responseText);
+			}
+		};
+
+		var url = "http://localhost:8080/cj-conversion";
+		xmlhttp.withCredentials = true;
+		xmlhttp.open("POST", url);
+		xmlhttp.setRequestHeader("Content-Type", "application/json");
+		xmlhttp.send(JSON.stringify(data));
+
+	})();
+</script>
