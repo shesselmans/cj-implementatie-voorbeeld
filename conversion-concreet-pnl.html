@@ -1,34 +1,56 @@
 <script>
-	(function(){
+(function () {
 
-		var boekingNummer = "{{boekingNummer}}";
-		var datumReservering = "{{datumReservering}}";
-		var activityId = "{{activityId}}";
+  function getCookie(name) {
+    var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : '';
+  }
 
-		var xmlhttp = new XMLHttpRequest();
-		xmlhttp.onload = function(ev){
-			if (xmlhttp.status >= 200 && xmlhttp.status < 300) {
-				var response = JSON.parse(xmlhttp.responseText);
-                console.log('APPT API post was sent correctly - New Appointment');
-				console.log(response);
-			} else {
-				var response = JSON.parse(xmlhttp.responseText);
-				console.log('Error sending APPT API post - New Appointment');
-				console.log(response);
-			}
-		}
-		var url = "https://appt.pearle.nl/appt-tracker/appointment";
-		xmlhttp.withCredentials = true;
-		xmlhttp.open("POST", url);
-		xmlhttp.setRequestHeader("Content-Type", "application/json");
-		if(typeof boekingNummer !== "undefined" && typeof datumReservering !== "undefined" && typeof activityId !== "undefined"){
-			var data = {
-				"status":"SCHEDULED",
-				"reflexId": boekingNummer,
-				"apptType": activityId,
-				"scheduledDate": datumReservering
-			}
-			xmlhttp.send(JSON.stringify(data));
-		}
-	})()
+  var rawProducts = {{CJ - Transaction Products}};
+  var items = [];
+
+  for (var i = 0; i < rawProducts.length; i++) {
+    var p = rawProducts[i];
+    items.push({
+      sku:       p.sku,
+      unitPrice: parseFloat(p.priceExclTax),
+      quantity:  parseInt(p.quantity, 10),
+      discount:  parseFloat(p.discountExclTax)
+    });
+  }
+
+  var coupon = "{{couponCode}}";
+
+  var data = {
+    orderId:   "{{transactionId}}",
+    eventTime: new Date().toISOString(),
+    amount:    parseFloat("{{transactionTotalWithDiscountWithoutTax}}"),
+    currency:  "EUR",
+    cjEvent:   getCookie('cje'),
+    discount:  parseFloat("{{transactionDiscountExclTax}}"),
+    demo:      false,
+    items:     items
+  };
+
+  if (coupon !== "undefined" && coupon !== "") {
+    data.coupon = coupon;
+  }
+
+  var xmlhttp = new XMLHttpRequest();
+
+  xmlhttp.onload = function () {
+    if (xmlhttp.status >= 200 && xmlhttp.status < 300) {
+      console.log('CJ conversion sent successfully', JSON.parse(xmlhttp.responseText));
+    } else {
+      console.log('Error sending CJ conversion', xmlhttp.status, xmlhttp.responseText);
+    }
+  };
+
+  var url = "https://appt.pearle.nl/appt-tracker/cj-conversion"; // TODO: vervang door productie-URL
+
+  xmlhttp.open("POST", url);
+  xmlhttp.setRequestHeader("Content-Type", "application/json");
+  xmlhttp.send(JSON.stringify(data));
+
+})();
 </script>
