@@ -1,0 +1,107 @@
+<!-- ============================================================
+     DUMMY dataLayer – alleen voor lokaal testen, verwijder dit
+     blok voordat je live gaat. Op de echte afspraakbevestigingspagina
+     vult het CMS / tag-systeem de dataLayer zelf.
+
+     LET OP: event-naam en veldnamen hieronder ("afspraak",
+     appointment_id, value) zijn placeholders. Pas ze aan zodra
+     bekend is welk dataLayer-event de afspraakbevestigingspagina
+     daadwerkelijk pusht.
+     ============================================================ -->
+<script>
+	window.dataLayer = window.dataLayer || [];
+	window.dataLayer.push({
+		event: "afspraak",
+		appointment: {
+			appointment_id: "AFS-20260614-001",
+			value:          0,
+			currency:       "EUR"
+		}
+	});
+
+	// Dummy cje-cookie zodat de guard in het script hieronder niet blokkeert
+	document.cookie = "cje=7166ddf3b35b11eb834200a10a1eb972; path=/";
+</script>
+<!-- ============================================================ -->
+
+<script>
+	(function(){
+
+		// ----------------------------------------------------------------
+		// Read the cjEvent click ID from the existing "cje" first-party
+		// cookie (cookie is set elsewhere, we only read it here).
+		// ----------------------------------------------------------------
+		function getCookie(name) {
+			var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+			return m ? decodeURIComponent(m.pop()) : "";
+		}
+		var cjEvent = getCookie("cje");
+
+		// ----------------------------------------------------------------
+		// Find the most recent "afspraak" event in the dataLayer.
+		// The dataLayer is a plain array; we scan it in reverse so we
+		// always use the latest push in case the page fired more than one.
+		// ----------------------------------------------------------------
+		var dl = window.dataLayer || [];
+		var appt = null;
+		for (var i = dl.length - 1; i >= 0; i--) {
+			if (dl[i] && dl[i].event === "afspraak" && dl[i].appointment) {
+				appt = dl[i].appointment;
+				break;
+			}
+		}
+
+		if (!appt) {
+			console.log("CJ afspraak-conversie niet verstuurd: geen 'afspraak'-event gevonden in dataLayer.");
+			return;
+		}
+
+		var orderId = appt.appointment_id || "";
+		if (!orderId || !cjEvent) {
+			console.log("CJ afspraak-conversie niet verstuurd: appointment_id of cjEvent ontbreekt.", { orderId: orderId, cjEvent: cjEvent });
+			return;
+		}
+
+		// ----------------------------------------------------------------
+		// Build the payload. Geen "items": een afspraak heeft geen
+		// productregels. "amount" mag 0 zijn (geen orderbedrag).
+		// eventTime: dataLayer bevat geen timestamp; we gebruiken de
+		// huidige wall-clock tijd in ISO 8601 UTC zoals CJ vereist.
+		// ----------------------------------------------------------------
+		var demo = true;   // zet op false voor productie
+
+		var data = {
+			affiliateName: "CJ",
+			demo:          demo,
+			orderId:       String(orderId),
+			eventTime:     new Date().toISOString(),
+			amount:        parseFloat(appt.value) || 0,
+			currency:      String(appt.currency   || "EUR"),
+			cjEvent:       cjEvent
+		};
+
+		// ----------------------------------------------------------------
+		// POST to the pearle.nl server; the server will forward to CJ
+		// op de afspraak-actietracker.
+		// ----------------------------------------------------------------
+		var xmlhttp = new XMLHttpRequest();
+		xmlhttp.onload = function() {
+			if (xmlhttp.status >= 200 && xmlhttp.status < 300) {
+				var response = JSON.parse(xmlhttp.responseText);
+				if (demo) {
+					console.log("[CJ demo] Afspraak-conversie succesvol verstuurd.");
+					console.log("[CJ demo] Server response:", response);
+				}
+			} else {
+				console.error("[CJ] Fout bij versturen afspraak-conversie.", xmlhttp.status, xmlhttp.responseText);
+			}
+		};
+
+		var url = "http://localhost:8080/cj-appointment-conversion";
+		xmlhttp.withCredentials = true;
+		xmlhttp.open("POST", url);
+		xmlhttp.setRequestHeader("Content-Type", "application/json");
+		xmlhttp.send(JSON.stringify(data));
+
+	})();
+</script>

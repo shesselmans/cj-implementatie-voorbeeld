@@ -25,6 +25,7 @@ os.environ.setdefault("FLASK_SKIP_DOTENV", "1")
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+from cj_appointment_conversion import send_appointment_conversion
 from cj_conversion import send_conversion, CJ_ENDPOINT_LIVE, CJ_ENDPOINT_TEST
 
 logging.basicConfig(
@@ -50,6 +51,12 @@ def health():
 def test_page():
     """Serve the client HTML for local testing."""
     return send_from_directory(".", "conversion-client.html")
+
+
+@app.get("/test-afspraak")
+def test_appointment_page():
+    """Serve the appointment client HTML for local testing."""
+    return send_from_directory(".", "conversion-client-afspraak.html")
 
 
 @app.post("/cj-conversion")
@@ -93,6 +100,60 @@ def cj_conversion():
     try:
         result = send_conversion(order, endpoint=endpoint)
         logger.info("Conversion forwarded to CJ. orderId=%s", order.get("orderId"))
+        return jsonify(result), 200
+
+    except ValueError as exc:
+        logger.error("Configuration error: %s", exc)
+        return jsonify({"error": "Server configuration error.", "detail": str(exc)}), 500
+
+    except RuntimeError as exc:
+        # CJ returned order-level errors (e.g. duplicate orderId)
+        logger.error("CJ rejected the order: %s", exc)
+        return jsonify({"error": "CJ rejected the conversion.", "detail": str(exc)}), 422
+
+    except Exception as exc:
+        logger.exception("Unexpected error forwarding conversion to CJ.")
+        return jsonify({"error": "Unexpected server error.", "detail": str(exc)}), 500
+
+
+@app.post("/cj-appointment-conversion")
+def cj_appointment_conversion():
+    """
+    Accept the appointment payload from the client HTML and forward to CJ.
+
+    Expected JSON body (mirrors what conversion-client-afspraak.html sends,
+    no "items"):
+    {
+        "orderId":   "AFS-001",
+        "eventTime": "2026-06-14T13:00:00.000Z",
+        "amount":    0,
+        "currency":  "EUR",
+        "cjEvent":   "<cje cookie value>"
+    }
+    """
+    order = request.get_json(silent=True)
+
+    if not order:
+        logger.warning("Received request with no JSON body.")
+        return jsonify({"error": "Request body must be JSON."}), 400
+
+    required = ("orderId", "eventTime", "currency", "cjEvent")
+    missing = [f for f in required if not order.get(f)]
+    if order.get("amount") is None:
+        missing.append("amount")
+    if missing:
+        logger.warning("Missing required fields: %s", missing)
+        return jsonify({"error": "Missing required fields.", "fields": missing}), 400
+
+    demo = bool(order.pop("demo", False))
+    order.pop("affiliateName", None)   # niet doorgeven aan CJ
+
+    endpoint = CJ_ENDPOINT_TEST if demo else CJ_ENDPOINT_LIVE
+    logger.info("demo=%s → endpoint: %s", demo, endpoint)
+
+    try:
+        result = send_appointment_conversion(order, endpoint=endpoint)
+        logger.info("Afspraak-conversie forwarded to CJ. orderId=%s", order.get("orderId"))
         return jsonify(result), 200
 
     except ValueError as exc:
