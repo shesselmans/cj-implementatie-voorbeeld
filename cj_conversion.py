@@ -49,9 +49,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration – set these in .env or as real environment variables
 # ---------------------------------------------------------------------------
-CJ_ENTERPRISE_ID     = os.environ.get("CJ_ENTERPRISE_ID", None)
-CJ_ACTION_TRACKER_ID = os.environ.get("CJ_ACTION_TRACKER_ID", None)
-CJ_ACCESS_TOKEN      = os.environ.get("CJ_ACCESS_TOKEN", None)
+CJ_ENTERPRISE_ID     = os.environ.get("CJ_ENTERPRISE_ID", "")
+CJ_ACTION_TRACKER_ID = os.environ.get("CJ_ACTION_TRACKER_ID", "")
+CJ_ACCESS_TOKEN      = os.environ.get("CJ_ACCESS_TOKEN", "")
 CJ_ENDPOINT_LIVE = "https://tracking.api.cj.com/graphql"
 CJ_ENDPOINT_TEST = "https://tracking.api.cj.com/graphqltest"
 CJ_ENDPOINT      = os.environ.get("CJ_ENDPOINT", CJ_ENDPOINT_TEST)
@@ -114,8 +114,10 @@ def build_create_orders_mutation(order: dict, enterprise_id: str, action_tracker
 
     Raises ValueError when required fields are missing.
     """
-    required = ("orderId", "eventTime", "amount", "currency", "cjEvent")
+    required = ("orderId", "eventTime", "currency", "cjEvent")
     missing = [f for f in required if not order.get(f)]
+    if order.get("amount") is None:
+        missing.append("amount")
     if missing:
         raise ValueError(f"Order is missing required fields: {missing}")
 
